@@ -1,0 +1,115 @@
+import cv2
+import pyrealsense2 as rs
+import numpy as np
+import os
+import time
+
+## Configs ##
+num_frames_to_capture = 30  # total number of frames to capture
+fps = 15 # frames to capture per second
+width = 1280 # resolution width
+height = 720 # resolution height
+output_folder = r" "  # output folder
+#############
+
+def capture_frames(output_folder, pipeline, num_frames_to_capture):
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    output_folder = os.path.join(output_folder, "Captures")
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    # Define codec and create VideoWriter objects
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+
+    # Create VideoWriter objects with the correct file names
+    timestamp = time.strftime("%m%d%H%M%S")
+    color_writer = cv2.VideoWriter(os.path.join(output_folder, f"{timestamp}_Color_Frame.mp4"), fourcc, fps, (width, height))
+    first_8_bits_writer = cv2.VideoWriter(os.path.join(output_folder, f"{timestamp}_Depth_Frame_Higher8bits.mp4"), fourcc, fps, (width, height), isColor=False)
+    last_8_bits_writer = cv2.VideoWriter(os.path.join(output_folder, f"{timestamp}_Depth_Frame_Lower8bits.mp4"), fourcc, fps, (width, height), isColor=False)
+
+    try:
+        for frame_number in range(num_frames_to_capture):
+            frames = pipeline.wait_for_frames()
+
+            color_frame = frames.get_color_frame()
+            depth_frame = frames.get_depth_frame()
+
+            color_image = np.asanyarray(color_frame.get_data())
+            depth_image = np.asanyarray(depth_frame.get_data())
+
+            color_image_rgb = cv2.cvtColor(color_image, cv2.COLOR_RGB2BGR)
+
+            # Write frames to the corresponding video files
+            color_writer.write(color_image_rgb)
+            first_8_bits_writer.write((depth_image >> 8).astype(np.uint8))
+            last_8_bits_writer.write((depth_image & 0x00FF).astype(np.uint8))
+
+            print(f"Frame {frame_number+1} captured and saved as videos.")
+
+        print("\n"f"{num_frames_to_capture} frames captured and saved as videos.")
+    finally:
+        # Release VideoWriter objects after writing all frames
+        color_writer.release()
+        first_8_bits_writer.release()
+        last_8_bits_writer.release()
+
+def main():
+    print("Intel RealSense Depth Camera Initialized!\n\nPress C to capture, R to resize window back to default, or Q to exit\n")
+
+    pipeline = rs.pipeline()
+
+    config = rs.config()
+    config.enable_device('234222304677')
+    config.enable_stream(rs.stream.color, width, height, rs.format.rgb8, fps)
+    config.enable_stream(rs.stream.depth, width, height, rs.format.z16, fps)
+
+    pipeline.start(config)
+
+    color_window_name = 'Color Image'
+    depth_window_name = 'Depth Image'
+
+    cv2.namedWindow(color_window_name, cv2.WINDOW_NORMAL)
+    cv2.namedWindow(depth_window_name, cv2.WINDOW_NORMAL)
+
+    frame_counter = 0  # Keep track of captured frames
+
+    while True:
+        try:
+            frames = pipeline.wait_for_frames()
+        except RuntimeError as e:
+            print("An error occurred:", e)
+            break
+
+        color_frame = frames.get_color_frame()
+        depth_frame = frames.get_depth_frame()
+
+        color_image = np.asanyarray(color_frame.get_data())
+        depth_image = np.asanyarray(depth_frame.get_data())
+
+        color_image_rgb = cv2.cvtColor(color_image, cv2.COLOR_RGB2BGR)
+        depth_colormap = cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha=0.03), cv2.COLORMAP_JET)
+        depth_colormap_rgb = cv2.cvtColor(depth_colormap, cv2.COLOR_BGR2RGB)
+
+        cv2.imshow(color_window_name, color_image_rgb)
+        cv2.imshow(depth_window_name, depth_colormap_rgb)
+
+        key = cv2.waitKey(10)
+        if key & 0xFF == ord('q'):
+            break
+        elif key & 0xFF == ord('c'):
+            if frame_counter < num_frames_to_capture:
+                print("\nCapturing frames...")
+                capture_frames(output_folder, pipeline, num_frames_to_capture - frame_counter)  # Capture remaining frames
+                frame_counter = 0  # Reset frame_counter
+
+        elif key & 0xFF == ord('r'):
+            cv2.resizeWindow(color_window_name, 640, 360)
+            cv2.resizeWindow(depth_window_name, 640, 360)
+
+    pipeline.stop()
+    cv2.destroyAllWindows()
+
+if __name__ == "__main__":
+    main()
