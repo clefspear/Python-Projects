@@ -59,5 +59,3 @@ This notebook demonstrates:
 - Analyze more award categories and apply clustering for thematic insights
 
 ---
-
-Let me know if you’d like a version with badges, license, or installation instructions as well!
